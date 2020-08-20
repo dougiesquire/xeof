@@ -7,7 +7,7 @@ SENSOR_DIM_NAME = 'sensor_dims'
 MODE_DIM_NAME = 'mode'
     
 
-def eofs(da, sensor_dims, sample_dim='time', weight=None, n_modes=20, lat_name='lat', norm_PCs=True):
+def eof(da, sensor_dims, sample_dim='time', weight=None, n_modes=20, lat_name='lat', norm_PCs=True):
     """
         Returns the empirical orthogonal functions (EOFs), and associated principle component \
                 timeseries (PCs), and explained variances of provided array. Follows notation used in \
@@ -34,7 +34,7 @@ def eofs(da, sensor_dims, sample_dim='time', weight=None, n_modes=20, lat_name='
             
         Returns
         -------
-        eofs : xarray Dataset
+        eof : xarray Dataset
             | Dataset containing the following variables:
             | EOFs; array containing the empirical orthogonal functions
             | PCs; array containing the associated principle component timeseries
