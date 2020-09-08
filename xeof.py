@@ -5,9 +5,9 @@ import dask.array as darray
 
 SENSOR_DIM_NAME = 'sensor_dims'
 MODE_DIM_NAME = 'mode'
-    
+LAT_NAME = 'lat'
 
-def eof(da, sensor_dims, sample_dim='time', weight=None, n_modes=20, lat_name='lat', norm_PCs=True):
+def eof(da, sensor_dims, sample_dim='time', weight=None, n_modes=20, norm_PCs=True):
     """
         Returns the empirical orthogonal functions (EOFs), and associated principle component \
                 timeseries (PCs), and explained variances of provided array. Follows notation used in \
@@ -22,10 +22,10 @@ def eof(da, sensor_dims, sample_dim='time', weight=None, n_modes=20, lat_name='l
         ds : xarray DataArray
             Array to use to compute EOFs.
         sensor_dims : str, optional
-            EOFs sensor dimension. Usually 'time'.
+            EOFs sensor dimension. Usually 'lat' and 'lon'.
         sample_dim : str, optional
             EOFs sample dimension. Usually 'time'.
-        weight : xarray DataArray
+        weight : xarray DataArray, optional
             Weighting to apply prior to svd. If weight=None, cos(lat)^2 weighting are used.
         n_modes : values, optional
             Number of EOF modes to return
@@ -47,7 +47,7 @@ def eof(da, sensor_dims, sample_dim='time', weight=None, n_modes=20, lat_name='l
         >>> A = xr.DataArray(np.random.normal(size=(6,4,40)), 
         ...                  coords=[('lat', np.arange(-75,76,30)), ('lon', np.arange(45,316,90)), 
         ...                          ('time', pd.date_range('2000-01-01', periods=40, freq='M'))])
-        >>> eofs(A)
+        >>> xeof.eof(A, sensor_dims=['lat','lon'])
         <xarray.Dataset>
         Dimensions:        (lat: 6, lon: 4, mode: 20, time: 40)
         Coordinates:
@@ -93,7 +93,11 @@ def eof(da, sensor_dims, sample_dim='time', weight=None, n_modes=20, lat_name='l
 
     # Apply weights -----
     if weight is None:
-        weight = xr.ufuncs.cos(da[lat_name] * degtorad) ** 0.5
+        if LAT_NAME not in da.dims:
+            raise ValueError(f'{LAT_NAME} is not a dimension of da. Please provide the name of the latitude '+
+                             f'dimension through xeof.LAT_NAME=<latitude dimension>')
+        else:
+            weight = xr.ufuncs.cos(da[LAT_NAME] * degtorad) ** 0.5
     da_weighted = weight.fillna(0) * da
     
     # Stack sample dimensions -----
@@ -125,3 +129,54 @@ def eof(da, sensor_dims, sample_dim='time', weight=None, n_modes=20, lat_name='l
     EOF[MODE_DIM_NAME] = np.arange(1, n_modes+1)
     
     return EOF.unstack(SENSOR_DIM_NAME)
+
+
+def project_onto_eof(field, eof, sensor_dims, weight=None):
+    """Project a field onto a set of provided EOFs to generate a corresponding set of pseudo-PCs
+        
+        | Author: Dougie Squire
+        | Date: 19/18/2019
+        
+        Parameters
+        ----------
+        field : xarray DataArray
+            Array containing the data to project onto the EOFs
+        eof : xarray DataArray
+            Array contain set of EOFs to project onto.
+        sensor_dims : str, optional
+            EOFs sensor dimension.
+        weight : xarray DataArray, optional
+            Weighting to apply to field prior to projection. If weight=None, cos(lat)^2 weighting are used.
+            
+        Returns
+        -------
+        projection : xarray DataArray
+            Array containing the pseudo-PCs
+            
+        Examples
+        --------
+        >>> A = xr.DataArray(np.random.normal(size=(6,4,40)), 
+        ...                  coords=[('lat', np.arange(-75,76,30)), ('lon', np.arange(45,316,90)), 
+        ...                          ('time', pd.date_range('2000-01-01', periods=40, freq='M'))])
+        >>> eof = xeof.eof(A, sensor_dims=['lat','lon'])
+        >>> project_onto_eof(A, eof['eof'], sensor_dims=['lat','lon'])
+        <xarray.DataArray (mode: 20, time: 40)>
+        array([[ ... ]])
+        Coordinates:
+          * mode     (mode) int64 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20
+          * time     (time) datetime64[ns] 2000-01-31 2000-02-29 ... 2003-04-30
+        
+    """
+    
+    degtorad = np.pi / 180
+
+    # Apply weights -----
+    if weight is None:
+        if LAT_NAME not in field.dims:
+            raise ValueError(f'{LAT_NAME} is not a dimension of field. Please provide the name of the latitude '+
+                             f'dimension through xeof.LAT_NAME=<latitude dimension>')
+        else:
+            weight = xr.ufuncs.cos(field[LAT_NAME] * degtorad) ** 0.5
+    field_weighted = weight.fillna(0) * field
+    
+    return xr.dot(eof, field_weighted, dims=sensor_dims)
