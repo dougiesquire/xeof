@@ -8,14 +8,10 @@ MODE_DIM_NAME = 'mode'
 LAT_NAME = 'lat'
 
 def eof(da, sensor_dims, sample_dim='time', weight=None, n_modes=20, norm_PCs=True):
-    """
-        Returns the empirical orthogonal functions (EOFs), and associated principle component \
-                timeseries (PCs), and explained variances of provided array. Follows notation used in \
-                "Bjornsson H. and Venegas S. A. 1997 A Manual for EOF and SVD analyses of Climatic Data", \
-                whereby, (phi, sqrt_lambdas, EOFs) = svd(data) and PCs = phi * sqrt_lambdas
-        
-        | Author: Dougie Squire
-        | Date: 19/18/2019
+    """ Returns the empirical orthogonal functions (EOFs), and associated principle component
+        timeseries (PCs), and explained variances of provided array. Follows notation used in
+        Bjornsson H. and Venegas S. A. 1997 A Manual for EOF and SVD analyses of Climatic Data,
+        whereby, (phi, sqrt_lambdas, EOFs) = svd(data) and PCs = phi * sqrt_lambdas
         
         Parameters
         ----------
@@ -30,7 +26,8 @@ def eof(da, sensor_dims, sample_dim='time', weight=None, n_modes=20, norm_PCs=Tr
         n_modes : values, optional
             Number of EOF modes to return
         norm_PCs : boolean, optional
-            If True, return the PCs normalised by sqrt(lambda) (ie phi), else return PCs = phi * sqrt(lambda)
+            If True, return the PCs normalised by sqrt(lambda) (ie phi), else return 
+            PCs = phi * sqrt(lambda)
             
         Returns
         -------
@@ -39,8 +36,8 @@ def eof(da, sensor_dims, sample_dim='time', weight=None, n_modes=20, norm_PCs=Tr
             | EOFs; array containing the empirical orthogonal functions
             | PCs; array containing the associated principle component timeseries
             | lambdas; array containing the eigenvalues of the covariance of the input data
-            | explained_var; array containing the fraction of the total variance explained by each EOF \
-                    mode
+            | explained_var; array containing the fraction of the total variance explained \
+              by each EOF mode
             
         Examples
         --------
@@ -132,10 +129,8 @@ def eof(da, sensor_dims, sample_dim='time', weight=None, n_modes=20, norm_PCs=Tr
 
 
 def project_onto_eof(field, eof, sensor_dims, weight=None):
-    """Project a field onto a set of provided EOFs to generate a corresponding set of pseudo-PCs
-        
-        | Author: Dougie Squire
-        | Date: 19/18/2019
+    """ Project a field onto a set of provided EOFs to generate a corresponding set of 
+        pseudo-PCs
         
         Parameters
         ----------
@@ -146,7 +141,8 @@ def project_onto_eof(field, eof, sensor_dims, weight=None):
         sensor_dims : str, optional
             EOFs sensor dimension.
         weight : xarray DataArray, optional
-            Weighting to apply to field prior to projection. If weight=None, cos(lat)^2 weighting are used.
+            Weighting to apply to field prior to projection. If weight=None, cos(lat)^2
+            weighting are used.
             
         Returns
         -------
@@ -173,8 +169,9 @@ def project_onto_eof(field, eof, sensor_dims, weight=None):
     # Apply weights -----
     if weight is None:
         if LAT_NAME not in field.dims:
-            raise ValueError(f'{LAT_NAME} is not a dimension of field. Please provide the name of the latitude '+
-                             f'dimension through xeof.LAT_NAME=<latitude dimension>')
+            raise ValueError(f'{LAT_NAME} is not a dimension of field. Please provide the '+ 
+                             'name of the latitude dimension through xeof.LAT_NAME '+
+                             '=<latitude dimension>')
         else:
             weight = xr.ufuncs.cos(field[LAT_NAME] * degtorad) ** 0.5
     field_weighted = weight.fillna(0) * field
