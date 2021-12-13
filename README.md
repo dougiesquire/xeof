@@ -1,3 +1,3 @@
 # xeof
 
-Simple dask-enabled xarray wrapper for empirical orthogonal function decomposition using svd
+A simple dask-enabled xarray wrapper for empirical orthogonal function decomposition using svd
