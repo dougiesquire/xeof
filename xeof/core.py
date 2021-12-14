@@ -8,7 +8,41 @@ MODE_DIM_NAME = "mode"
 LAT_NAME = "lat"
 
 
-def eof(da, sensor_dims, sample_dim="time", weight=None, n_modes=20, norm_PCs=True):
+def _apply_weights(ds, weight):
+    """Apply weights to ds
+
+    Parameters
+    ----------
+    ds : xarray DataArray or Dataset
+        Array to use to compute EOFs.
+    weight : str or xarray DataArray of Dataset
+        Weighting to apply prior to svd. Two in-built options are
+        currently provided that can be specified by providing strings:
+        | "none"; no weighting applied
+        | "sqrt_cos_lat"; cos(lat)^0.5 weighting
+        Otherwise, an array of weights should be supplied
+    """
+
+    degtorad = np.pi / 180
+
+    if isinstance(weight, str):
+        if weight == "none":
+            weight = 1
+        elif weight == "sqrt_cos_lat":
+            if LAT_NAME not in ds.dims:
+                raise ValueError(
+                    f"{LAT_NAME} is not a dimension of da. Please provide the name of the latitude "
+                    + "dimension through xeof.core.LAT_NAME=<latitude dimension>"
+                )
+            else:
+                weight = np.cos(ds[LAT_NAME] * degtorad) ** 0.5
+
+    return weight * ds
+
+
+def eof(
+    ds, sensor_dims, sample_dim="time", weight="sqrt_cos_lat", n_modes=20, norm_PCs=True
+):
     """ Returns the empirical orthogonal functions (EOFs), and associated principle component
         timeseries (PCs), and explained variances of provided array. Follows notation used in
         Bjornsson H. and Venegas S. A. 1997 A Manual for EOF and SVD analyses of Climatic Data,
@@ -16,16 +50,22 @@ def eof(da, sensor_dims, sample_dim="time", weight=None, n_modes=20, norm_PCs=Tr
 
         Parameters
         ----------
-        ds : xarray DataArray
+        ds : xarray DataArray or Dataset
             Array to use to compute EOFs.
         sensor_dims : str, optional
             EOFs sensor dimension. Usually 'lat' and 'lon'.
         sample_dim : str, optional
             EOFs sample dimension. Usually 'time'.
-        weight : xarray DataArray, optional
-            Weighting to apply prior to svd. If weight=None, cos(lat)^0.5 weighting are used.
+        weight : str or xarray DataArray of Dataset
+            Weighting to apply prior to svd. Two in-built options are
+            currently provided that can be specified by providing strings:
+            | "none"; no weighting applied
+            | "sqrt_cos_lat"; cos(lat)^0.5 weighting (default)
+            Otherwise, an array of weights should be supplied
         n_modes : values, optional
-            Number of EOF modes to return
+            Number of EOF modes to return. If the number of modes requested
+            is more than the number that are available, then all available
+            modes will be returned.
         norm_PCs : boolean, optional
             If True, return the PCs normalised by sqrt(lambda) (ie phi), else return
             PCs = phi * sqrt(lambda)
@@ -95,22 +135,19 @@ def eof(da, sensor_dims, sample_dim="time", weight=None, n_modes=20, norm_PCs=Tr
             explained_var[..., :n_modes],
         )
 
-    name = da.name
-    degtorad = np.pi / 180
+    if (not isinstance(ds, xr.DataArray)) & (not isinstance(ds, xr.Dataset)):
+        raise ValueError("ds must be an xarray DataArray or Dataset")
 
-    # Apply weights -----
-    if weight is None:
-        if LAT_NAME not in da.dims:
-            raise ValueError(
-                f"{LAT_NAME} is not a dimension of da. Please provide the name of the latitude "
-                + "dimension through xeof.LAT_NAME=<latitude dimension>"
-            )
-        else:
-            weight = xr.ufuncs.cos(da[LAT_NAME] * degtorad) ** 0.5
-    da_weighted = weight.fillna(0) * da
+    ds_weighted = _apply_weights(ds, weight)
 
     # Stack sample dimensions -----
-    da_weighted_stacked = da_weighted.stack(**{SENSOR_DIM_NAME: sensor_dims})
+    ds_weighted_stacked = ds_weighted.stack(**{SENSOR_DIM_NAME: sensor_dims})
+
+    if n_modes > ds_weighted_stacked.sizes[SENSOR_DIM_NAME]:
+        n_modes = ds_weighted_stacked.sizes[SENSOR_DIM_NAME]
+
+    if n_modes > ds_weighted_stacked.sizes[sample_dim]:
+        n_modes = ds_weighted_stacked.sizes[sample_dim]
 
     pc_dims = [sample_dim, MODE_DIM_NAME]
     eof_dims = [MODE_DIM_NAME, SENSOR_DIM_NAME]
@@ -121,7 +158,7 @@ def eof(da, sensor_dims, sample_dim="time", weight=None, n_modes=20, norm_PCs=Tr
 
     pcs, eofs, lambda_, explained_var = xr.apply_ufunc(
         _svd,
-        *(da_weighted_stacked, n_modes, norm_PCs),
+        *(ds_weighted_stacked, n_modes, norm_PCs),
         input_core_dims=[
             [
                 sample_dim,
@@ -135,16 +172,18 @@ def eof(da, sensor_dims, sample_dim="time", weight=None, n_modes=20, norm_PCs=Tr
         output_dtypes=[float],
         dask="allowed",
     )
-    pcs = pcs.rename("pc") if name is None else pcs.rename("pc__" + name)
-    eofs = eofs.rename("eof") if name is None else eofs.rename("eof__" + name)
-    lambda_ = (
-        lambda_.rename("lambda") if name is None else lambda_.rename("lambda__" + name)
-    )
-    explained_var = (
-        explained_var.rename("explained_var")
-        if name is None
-        else explained_var.rename("explained_var__" + name)
-    )
+    if isinstance(ds, xr.DataArray):
+        pcs = pcs.rename("pc")
+        eofs = eofs.rename("eof")
+        lambda_ = lambda_.rename("lambda")
+        explained_var = explained_var.rename("explained_var")
+    else:
+        pcs = pcs.rename({var: f"pc__{var}" for var in pcs.data_vars})
+        eofs = eofs.rename({var: f"eof__{var}" for var in eofs.data_vars})
+        lambda_ = lambda_.rename({var: f"lambda__{var}" for var in lambda_.data_vars})
+        explained_var = explained_var.rename(
+            {var: f"explained_var__{var}" for var in explained_var.data_vars}
+        )
 
     EOF = xr.merge([pcs, eofs, lambda_, explained_var])
     EOF[MODE_DIM_NAME] = np.arange(1, n_modes + 1)
@@ -195,11 +234,11 @@ def project_onto_eof(field, eof, sensor_dims, weight=None):
         if LAT_NAME not in field.dims:
             raise ValueError(
                 f"{LAT_NAME} is not a dimension of field. Please provide the "
-                + "name of the latitude dimension through xeof.LAT_NAME "
+                + "name of the latitude dimension through xeof.core.LAT_NAME "
                 + "=<latitude dimension>"
             )
         else:
-            weight = xr.ufuncs.cos(field[LAT_NAME] * degtorad) ** 0.5
+            weight = np.cos(field[LAT_NAME] * degtorad) ** 0.5
     field_weighted = weight.fillna(0) * field
 
     return xr.dot(eof, field_weighted, dims=sensor_dims)
