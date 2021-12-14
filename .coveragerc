@@ -2,4 +2,5 @@
 omit =
     setup.py
     versioneer.py
+    xeof/tests/fixtures.py
     xeof/_version.py
