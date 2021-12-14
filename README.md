@@ -5,3 +5,14 @@
 [![codecov](https://codecov.io/gh/dougiesquire/xeof/branch/master/graph/badge.svg?token=HMIIN0GGKL)](https://codecov.io/gh/dougiesquire/xeof)
 
 A simple dask-enabled xarray wrapper for empirical orthogonal function decomposition using svd
+
+### Installation
+
+This package is not on PyPI. To install:
+```
+# Install/activate dependencies or activate an environment with xarray and dask
+conda env create -f environment.yml
+conda activate xeof
+
+pip install .
+```
