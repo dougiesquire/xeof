@@ -5,7 +5,7 @@ import numpy.testing as npt
 import xarray as xr
 
 import xeof
-from xeof import eof
+from xeof import eof, project_onto_eof
 from .fixtures import example_da
 
 from eofs.xarray import Eof
@@ -18,8 +18,9 @@ from eofs.xarray import Eof
 def test_eof_values(shape, n_modes, weight, wrap):
     """Test values relative to Eof package"""
     data = example_da(shape, wrap=wrap)
-    lat_dim = f"dim_{len(data.shape)-1}"
+    lat_dim = f"dim_{len(shape)-1}"
     xeof.core.LAT_NAME = lat_dim
+    sensor_dims = [f"dim_{i}" for i in range(1, len(shape))]
 
     if weight == "none":
         weights = None
@@ -31,7 +32,7 @@ def test_eof_values(shape, n_modes, weight, wrap):
 
     res = eof(
         data,
-        sensor_dims=[f"dim_{i}" for i in range(1, len(shape))],
+        sensor_dims=sensor_dims,
         sample_dim="time",
         weight=weight,
         n_modes=n_modes,
@@ -53,11 +54,12 @@ def test_eof_values(shape, n_modes, weight, wrap):
 @pytest.mark.parametrize("wrap", ["numpy", "dask"])
 def test_pc_normalisation(shape, n_modes, wrap):
     """Test normalisation of PCs"""
-    xeof.core.LAT_NAME = "dim_1"
     data = example_da(shape, wrap=wrap)
+    sensor_dims = [f"dim_{i}" for i in range(1, len(shape))]
+
     res = eof(
         data,
-        sensor_dims=[f"dim_{i}" for i in range(1, len(shape))],
+        sensor_dims=sensor_dims,
         sample_dim="time",
         weight="none",
         n_modes=n_modes,
@@ -75,7 +77,75 @@ def test_pc_normalisation(shape, n_modes, wrap):
 def test_Dataset(n_variables, wrap):
     """Test Dataset input"""
     shape = (10, 5, 4)
+    sensor_dims = [f"dim_{i}" for i in range(1, len(shape))]
     data = xr.Dataset(
         {f"var_{i}": example_da(shape, wrap=wrap) for i in range(n_variables)}
     )
-    eof(data, sensor_dims=[f"dim_{i}" for i in range(1, len(shape))], sample_dim="time")
+
+    eof(data, sensor_dims=sensor_dims, sample_dim="time")
+
+
+@pytest.mark.parametrize("shape", [(20, 10), (20, 5, 4)])
+@pytest.mark.parametrize("weight", ["none", "sqrt_cos_lat"])
+@pytest.mark.parametrize("wrap", ["numpy", "dask"])
+def test_project_onto_eof_roundtrip(shape, weight, wrap):
+    """Test projection onto fields used to calculate eofs"""
+
+    data = example_da(shape, wrap=wrap)
+    lat_dim = f"dim_{len(shape)-1}"
+    xeof.core.LAT_NAME = lat_dim
+
+    sensor_dims = [f"dim_{i}" for i in range(1, len(shape))]
+    ver = eof(
+        data,
+        sensor_dims=sensor_dims,
+        sample_dim="time",
+        weight=weight,
+        n_modes=np.inf,
+        norm_PCs=False,
+    )
+
+    pc_res = project_onto_eof(data, ver["eof"], sensor_dims=sensor_dims, weight=weight)
+    pc_ver = ver["pc"]
+
+    npt.assert_allclose(pc_res - pc_ver, 0.0, atol=1e-10)
+
+
+@pytest.mark.parametrize("shape", [(20, 10), (20, 5, 4)])
+@pytest.mark.parametrize("weight", ["none", "sqrt_cos_lat"])
+@pytest.mark.parametrize(
+    "wrap", ["numpy"]
+)  # Eof package sometimes thinks there are nans in dask arrays
+def test_project_onto_eof_values(shape, weight, wrap):
+    """Test projection onto fields used to calculate eofs"""
+
+    data = example_da(shape, wrap=wrap)
+    field = example_da(shape, wrap=wrap)
+    lat_dim = f"dim_{len(shape)-1}"
+    xeof.core.LAT_NAME = lat_dim
+
+    if weight == "none":
+        weights = None
+    elif weight == "sqrt_cos_lat":
+        weights = np.cos(data[lat_dim] * np.pi / 180) ** 0.5
+
+    sensor_dims = [f"dim_{i}" for i in range(1, len(shape))]
+    eofs = eof(
+        data,
+        sensor_dims=sensor_dims,
+        sample_dim="time",
+        weight=weight,
+        n_modes=np.inf,
+        norm_PCs=False,
+    )
+
+    pc_res = project_onto_eof(
+        field, eofs["eof"], sensor_dims=sensor_dims, weight=weight
+    )
+
+    Eof_solver = Eof(data, weights=weights, center=False)
+    pc_ver = Eof_solver.projectField(field)
+    # Our mode start at 1:
+    pc_ver = pc_ver.assign_coords({"mode": pc_ver["mode"] + 1})
+
+    npt.assert_allclose(pc_res - pc_ver, 0.0, atol=1e-10)

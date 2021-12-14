@@ -191,7 +191,7 @@ def eof(
     return EOF.unstack(SENSOR_DIM_NAME)
 
 
-def project_onto_eof(field, eof, sensor_dims, weight=None):
+def project_onto_eof(field, eofs, sensor_dims, weight=None):
     """Project a field onto a set of provided EOFs to generate a corresponding set of
     pseudo-PCs
 
@@ -199,13 +199,13 @@ def project_onto_eof(field, eof, sensor_dims, weight=None):
     ----------
     field : xarray DataArray
         Array containing the data to project onto the EOFs
-    eof : xarray DataArray
+    eofs : xarray DataArray
         Array contain set of EOFs to project onto.
     sensor_dims : str, optional
         EOFs sensor dimension.
-    weight : xarray DataArray, optional
-        Weighting to apply to field prior to projection. If weight=None, cos(lat)^2
-        weighting are used.
+    weight : str or xarray DataArray of Dataset
+            Weighting to apply prior to projection. This should match the weighting
+            used to calculate the eofs (see xeof.eof)
 
     Returns
     -------
@@ -217,8 +217,8 @@ def project_onto_eof(field, eof, sensor_dims, weight=None):
     >>> A = xr.DataArray(np.random.normal(size=(6,4,40)),
     ...                  coords=[('lat', np.arange(-75,76,30)), ('lon', np.arange(45,316,90)),
     ...                          ('time', pd.date_range('2000-01-01', periods=40, freq='M'))])
-    >>> eof = xeof.eof(A, sensor_dims=['lat','lon'])
-    >>> project_onto_eof(A, eof['eof'], sensor_dims=['lat','lon'])
+    >>> eofs = xeof.eof(A, sensor_dims=['lat','lon'])
+    >>> project_onto_eof(A, eofs['eof'], sensor_dims=['lat','lon'])
     <xarray.DataArray (mode: 20, time: 40)>
     array([[ ... ]])
     Coordinates:
@@ -227,18 +227,11 @@ def project_onto_eof(field, eof, sensor_dims, weight=None):
 
     """
 
-    degtorad = np.pi / 180
+    if not isinstance(field, xr.DataArray):
+        raise ValueError("field must be a xarray DataArray")
+    if not isinstance(eofs, xr.DataArray):
+        raise ValueError("eofs must be a xarray DataArray")
 
-    # Apply weights -----
-    if weight is None:
-        if LAT_NAME not in field.dims:
-            raise ValueError(
-                f"{LAT_NAME} is not a dimension of field. Please provide the "
-                + "name of the latitude dimension through xeof.core.LAT_NAME "
-                + "=<latitude dimension>"
-            )
-        else:
-            weight = np.cos(field[LAT_NAME] * degtorad) ** 0.5
-    field_weighted = weight.fillna(0) * field
+    field_weighted = _apply_weights(field, weight)
 
-    return xr.dot(eof, field_weighted, dims=sensor_dims)
+    return xr.dot(eofs, field_weighted, dims=sensor_dims)
