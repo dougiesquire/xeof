@@ -2,7 +2,7 @@ name: xeof-test
 channels:
   - conda-forge
 dependencies:
-  - Eof
+  - eofs
   - python=3.8
   - xarray
   - numpy
